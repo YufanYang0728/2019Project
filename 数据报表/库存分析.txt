@@ -1,0 +1,151 @@
+USE [AIS20181030152008]
+GO
+/****** Object:  StoredProcedure [dbo].[KCFX]    Script Date: 2019-06-10 8:40:25 ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+ALTER PROCEDURE [dbo].[KCFX] 
+ --@itemno1 varchar(200),
+ @itemno varchar(200),
+ @enddate varchar(200),
+ @ptsl int 
+as begin 
+
+select @ptsl= case when @ptsl is null then 0 else @ptsl end
+select @enddate =case when @enddate is null then '2099-01-01'else @enddate end
+select @itemno=case when @itemno =''  then '%%' else @itemno end
+--select @itemno1=case when @itemno1 =''  then '' else @itemno1 end
+
+ --    KCFX '01.020102206','',100
+select
+ 0 fno,
+'成品编号：'+c.FNumber as FNumber,'BOM单号：'+a.FBOMNumber wl,
+'成品名称：'+c.FName wlsx,'' wlmodel ,'' unit ,a.FBOMNumber bomnum,null dwrl,null jskcsl 
+,'规格：'+c.FModel stock,null qlsl,null fitemid,null wlxqsl
+into #sub1
+from ICBOM a 
+left join ICBOMCHILD b on a.FInterID=b.FInterID
+left join t_ICItem c on a.FItemID=c.FItemID 
+where c.FNumber like @itemno-- like '@itemno'
+group by c.FNumber ,a.FBOMNumber ,c.FName ,c.FModel
+union all
+select
+1 fno,
+d.FNumber,d.FName wl,e.FName wlsx,d.FModel wlmodel
+,f.FName unit,a.FBOMNumber bomnum,isnull(b.FAuxQty,0) dwrl ,isnull(j.FQty,0) jskcsl ,isnull(k.FName,'') stock,
+case when @ptsl=0 then 0 else case when isnull(isnull(b.FAuxQty,0)*@ptsl-isnull(j.FQty,0),0)<0 then 0 else isnull(isnull(b.FAuxQty,0)*@ptsl-isnull(j.FQty,0),0) end end qlsl,
+d.FItemID,isnull(isnull(b.FAuxQty,0)*@ptsl,0) wlxqsl
+from ICBOM a 
+left join ICBOMCHILD b on a.FInterID=b.FInterID
+left join t_ICItem c on a.FItemID=c.FItemID 
+left join t_ICItem d on  b.FItemID=d.FItemID
+left join t_Submessage e on d.FErpClsID=e.FInterID
+left join t_MeasureUnit f on d.FUnitID=f.FItemID    
+left join  t_Stock k on b.FStockID=k.FItemID    
+left join (select FItemID,FStockID,sum(FQty)FQty from ICInventory where FStockID<>282 group by FItemID,FStockID ) j on d.FItemID=j.FItemID  
+where c.FNumber like @itemno --or c.FNumber like  @itemno1
+order by  a.FBOMNumber 
+
+select 
+ROW_NUMBER()over(partition by c.FItemID order by a.FDate desc) frow,
+c.FItemID wlid,a.FDate ddrq,b.FDate jhrq
+into #2
+from POOrder a 
+inner join POOrderEntry b on a.FInterID=b.FInterID
+left join t_ICItem c on b.FItemID=c.FItemID 
+where   isnull(a.FStatus,0)<>0 
+and convert(varchar(7),a.FDate,120)>=CONVERT(varchar(7),GETDATE(),120)
+and convert(varchar(10),a.FDate,120)<=CONVERT(varchar(10),GETDATE(),120)
+--and convert(varchar(7),a.FDate,120)='2019-05'--CONVERT(varchar(7),GETDATE(),120) --and a.FBillNo='CGDD20190361'
+group by c.FItemID ,a.FDate ,b.FDate 
+
+
+select 
+c.FItemID wlid,c.FName wl,sum(isnull(b.FQty,0)) dydhsl
+into #3
+from POOrder a 
+inner join POOrderEntry b on a.FInterID=b.FInterID
+left join t_ICItem c on b.FItemID=c.FItemID 
+where   isnull(a.FStatus,0)<>0 
+and convert(varchar(7),a.FDate,120)>=CONVERT(varchar(7),GETDATE(),120)
+and convert(varchar(10),a.FDate,120)<=CONVERT(varchar(10),GETDATE(),120)
+--and convert(varchar(7),a.FDate,120)='2019-05'--CONVERT(varchar(7),GETDATE(),120) --and a.FBillNo='CGDD20190361'
+group by c.FItemID ,c.FName
+
+select 
+a.*,b.ddrq,b.jhrq
+into #tab2
+from #3 a left join #2 b on a.wlid=b.wlid
+where b.frow=1
+
+
+select 
+ROW_NUMBER()over(partition by c.FItemID order by a.FDate desc) frow,
+c.FItemID wlid,a.FDate rkrq
+into #4
+from ICStockBill a
+inner join ICStockBillEntry b on a.FInterID=b.FInterID
+left join t_ICItem c on b.FItemID=c.FItemID 
+where a.FTranType=1 and a.FStatus=1
+and convert(varchar(7),a.FDate,120)>=CONVERT(varchar(7),GETDATE(),120)
+and convert(varchar(10),a.FDate,120)<=CONVERT(varchar(10),GETDATE(),120)--and a.FCancellation=0
+--convert(varchar(7),a.FDate,120)='2019-05'--CONVERT(varchar(7),GETDATE(),120) 
+ 
+ group by c.FItemID,a.FDate
+
+
+ select 
+  c.FItemID wlid,sum(isnull(b.FQty,0)) rksl
+  into #5
+from ICStockBill a
+inner join ICStockBillEntry b on a.FInterID=b.FInterID
+left join t_ICItem c on b.FItemID=c.FItemID 
+where-- convert(varchar(7),a.FDate,120)='2019-05'--CONVERT(varchar(7),GETDATE(),120) 
+a.FTranType=1 and a.FStatus=1
+and convert(varchar(7),a.FDate,120)>=CONVERT(varchar(7),GETDATE(),120)
+and convert(varchar(10),a.FDate,120)<=CONVERT(varchar(10),GETDATE(),120) --and a.FCancellation=0
+ group by c.FItemID
+
+ select 
+ a.*,b.rkrq
+ into #tab3
+ from 
+ #5 a left join #4 b on a.wlid=b.wlid
+ where b.frow=1 
+
+ 
+
+ select 
+ a.dydhsl-isnull(b.rksl,0) wdwl,
+ a.wlid,a.dydhsl,a.ddrq,a.jhrq,isnull(b.rksl,0) rksl,isnull(b.rkrq,'') rkrq
+ into #sub2
+ from 
+ #tab2 a left join #tab3 b on a.wlid=b.wlid
+ order by wlid
+ 
+
+ select 
+ a.FNumber 物料长代码,a.wl 物料,a.wlsx 物料属性,a.wlmodel 规格型号,a.unit 计量单位,
+ isnull(a.dwrl,0) 单位用量, isnull(a.jskcsl,0) 即时库存数量,a.stock 仓库,
+  isnull(a.qlsl,0) 缺料数量, isnull(a.wlxqsl,0) 物料需求数量, isnull(b.wdwl,0) 当月未到物料数量,
+ isnull(b.dydhsl,0) 当月订货数量, isnull(convert(varchar(10),b.ddrq ,120),'') 订单日期
+ ,isnull(convert(varchar(10),b.jhrq ,120),'') 交货日期, isnull(b.rksl,0) 当月入库数量,
+ isnull(convert(varchar(10),b.rkrq ,120),'') 入库日期
+ from #sub1 a
+ left join #sub2 b on a.fitemid=b.wlid
+ order by a.bomnum,a.fno
+
+
+
+drop table #2
+drop table #3
+drop table #4
+drop table #5
+drop table #tab2
+drop table #tab3
+drop table #sub1
+drop table #sub2
+
+end
